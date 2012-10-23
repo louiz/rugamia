@@ -1,0 +1,15 @@
+       =====================================================
+                        / \
+        _____  _    _  _____          __  __ _____
+       |  __ \| |  | |/ ____|   /\   |  \/  |_   _|   /\
+       | |__) | |  | | |  __   /  \  | \  / | | |    /  \
+       |  _  /| |  | | | |_ | / /\ \ | |\/| | | |   / /\ \
+       | | \ \| |__| | |__| |/ ____ \| |  | |_| |_ / ____ \
+       |_|  \_\\____/ \_____/_/    \_\_|  |_|_____/_/    \_\
+
+       =====================================================
+
+Ruĝamia is an XMPP (jabber) bot written in ruby that can respond to various
+user commands (for example give the details for a given bug id, open a new
+bug, etc), as well as announcing new events happening on a project (new
+commits, new issue opened, issue edited…).
