@@ -13,3 +13,4 @@ Ruĝamia is an XMPP (jabber) bot written in ruby that can respond to various
 user commands (for example give the details for a given bug id, open a new
 bug, etc), as well as announcing new events happening on a project (new
 commits, new issue opened, issue edited…).
+
