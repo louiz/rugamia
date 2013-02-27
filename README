@@ -1,4 +1,3 @@
-       =====================================================
                         / \
         _____  _    _  _____          __  __ _____
        |  __ \| |  | |/ ____|   /\   |  \/  |_   _|   /\
@@ -7,10 +6,48 @@
        | | \ \| |__| | |__| |/ ____ \| |  | |_| |_ / ____ \
        |_|  \_\\____/ \_____/_/    \_\_|  |_|_____/_/    \_\
 
-       =====================================================
+Ruĝamia is a suite a tools that lets a redmine instance and one or more MUC
+(XMPP chatrooms) communicate.
+It features:
 
-Ruĝamia is an XMPP (jabber) bot written in ruby that can respond to various
-user commands (for example give the details for a given bug id, open a new
-bug, etc), as well as announcing new events happening on a project (new
-commits, new issue opened, issue edited…).
+ - Realtime chatroom notifications when a change occurs in the bugtracker or
+   when a commit is pushed on a git repository
 
+ - Request of information about issues present in the bug tracker by sending
+   messages in the chatroom
+
+ - Creating new issues in the bug tracker by sending messages in the
+   chatroom
+
+
+It is composed of three distincts parts:
+
+ - A redmine plugin (in ruby) that sends notification messages about the bug
+   tracker changes into an IPC socket
+
+ - A git hook (in python) that sends notification messages about recent
+   commits into an IPC socket
+
+ - A XMPP bot (in python) that reads messages into an IPC socket and forward
+   them into the appropriate chatrooms. It also receives chatroom messages,
+   queries the redmine API and sends back a response
+
+=======================
+    Contact/support
+=======================
+Jabber ChatRoom:   ruĝamia@muc.poezio.eu
+Report a bug:      http://dev.louiz.org/projects/rugamia/issues/new
+
+=======================
+	License
+=======================
+Ruĝamia is Free Software.
+(learn more: http://www.gnu.org/philosophy/free-sw.html)
+
+Ruĝamia is released under the zlib License.
+Please read the COPYING file for details.
+
+=======================
+	Authors
+=======================
+Florent Le Coz (louiz’) <louiz@poezio.eu> (developer)
