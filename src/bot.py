@@ -19,6 +19,7 @@ notifications when an issue has been edited on the bug tracker.
 import urllib.request
 import urllib.error
 import sleekxmpp
+import datetime
 import argparse
 import getpass
 import urllib
@@ -45,8 +46,8 @@ class RedmineApi(object):
         res['tracker'] = issue.find('tracker').attrib.get('name')
         res['author'] = issue.find('author').attrib.get('name')
         res['subject'] = issue.find('subject').text
-        res['created_on'] = issue.find('created_on').text
-        res['updated_on'] = issue.find('updated_on').text
+        res['created_on'] = datetime.datetime.strptime(issue.find('created_on').text, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y/%m/%d %H:%M:%S")
+        res['updated_on'] = datetime.datetime.strptime(issue.find('updated_on').text, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y/%m/%d %H:%M:%S")
         res['id'] = number
         res['url'] = "%s/issues/%s" % (self.url, number)
         return res
@@ -64,6 +65,7 @@ class Bot(sleekxmpp.ClientXMPP):
         self.rooms = {name: False for name in args.rooms}
         # {room_names: [message, message]}
         self.messages_to_send_on_join = {}
+        self.affiliations = {}
 
         print("Connecting to %s" % (jid))
 
@@ -92,19 +94,28 @@ class Bot(sleekxmpp.ClientXMPP):
         self.disconnect()
 
     def send_message_to_room(self, room, message):
+        message = message.strip()
         if not self.is_room_joined(room):
             self.join_room(room)
             self.set_delayed_message(room, message)
         else:
             print("Actually sending [%s] to %s" % (message, room))
-            self.send_message(mto=room, mbody=message, mtype='groupchat')
+            stanza = self.make_message(room)
+            stanza['type'] = 'groupchat'
+            stanza['body'] = message
+            stanza.enable('html')
+            stanza['html']['body'] = htmlize(message)
+            stanza.send()
 
     def set_delayed_message(self, room, message):
         print("Room %s is not joined, delaying message: [%s]" % (room, message))
         if room not in self.messages_to_send_on_join:
             self.messages_to_send_on_join[room] = [message]
         else:
-            self.messages_to_send_on_join[room].append(message)
+            if len(self.messages_to_send_on_join[room]) < 10:
+                self.messages_to_send_on_join[room].append(message)
+            else:
+                print("Message queue too long, dropping message.")
 
     def on_connected(self, event):
         print("Connected: %s" % event)
@@ -121,11 +132,20 @@ class Bot(sleekxmpp.ClientXMPP):
         self.join_rooms()
 
     def on_groupchat_presence(self, presence):
-        if presence['from'].resource == self.nick:
-            room = presence['from'].bare
+        print(presence)
+
+        room = presence['from'].bare
+        affiliation = presence['muc']['affiliation']
+        nick = presence['from'].resource
+        if affiliation:
+            if not room in self.affiliations:
+                self.affiliations[room] = {}
+            self.affiliations[room][nick] = affiliation
+        print(self.affiliations)
+        if nick == self.nick:
             if presence['type'] == 'unavailable':
                 self.on_groupchat_leave(room)
-            else:
+            if presence['type'] == 'available':
                 print('Room %s joined.' % room)
                 if room in self.rooms:
                     self.rooms[room] = True
@@ -139,29 +159,36 @@ class Bot(sleekxmpp.ClientXMPP):
         if message['from'].resource == self.nick:
             return
         room = message['from'].bare
-        for bug_number in re.findall('#(\d+)', message['body']):
-            print(bug_number)
-            try:
-                info = self.redmine_api.get_bug_information(int(bug_number))
-            except urllib.error.HTTPError:
-                self.send_message_to_room(room, "Bug %s not found." % bug_number)
-            else:
-                print(info)
-                if info:
-                    response = "Bug %(url)s - %(subject)s\n%(status)s - %(author)s - Created on: %(created_on)s" % info
-                    self.send_message_to_room(room, response)
+        if message['body'].startswith('!add '):
+            pass
+        else:
+            for bug_number in re.findall('#(\d+)', message['body'])[:4]:
+                print(bug_number)
+                try:
+                    info = self.redmine_api.get_bug_information(int(bug_number))
+                except urllib.error.HTTPError:
+                    self.send_message_to_room(room, "Bug %s not found." % bug_number)
+                else:
+                    print(info)
+                    if info:
+                        response = "Bug %(url)s – %(subject)s\n%(status)s – %(author)s – Created on: %(created_on)s" % info
+                        self.send_message_to_room(room, response)
         print(message['body'])
 
     def on_groupchat_leave(self, room):
         print("Left room %s" % room)
 
+def htmlize(text):
+    text = re.sub(r'\++', lambda x: ("<span style='color:green'>%s</span>" % x.group(0)), text)
+    text = re.sub(r'-+', lambda x: ("<span style='color:red'>%s</span>" % x.group(0)), text)
+    text = text.replace('\n', '<br/>')
+    return "<body xmlns='http://www.w3.org/1999/xhtml'><p>%s</p></body>" % text
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='XMPP bot')
 
     parser.add_argument('jid', help='The JID used to authenticate the bot on the XMPP network')
     parser.add_argument('--host', help='The custom host to connect to.')
-    parser.add_argument('--forge', help='The url of the forge’s main page.')
     parser.add_argument('--port', help='The custom port to connect to.', default=5222)
     parser.add_argument('--nick', help='The nick to use in MUC rooms')
     parser.add_argument('--socket', help='The IPC file used to receive messages')
@@ -170,17 +197,15 @@ def parse_arguments():
     return parser.parse_args()
 
 def main():
+    api = RedmineApi("http://redmine.org")
     args = parse_arguments()
-
-    api = RedmineApi(args.forge)
 
     bot = Bot(args, api)
     signal.signal(signal.SIGINT, bot.exit)
 
     ctx = zmq.Context()
-    socket = ctx.socket(zmq.SUB)
+    socket = ctx.socket(zmq.PULL)
     socket.connect("ipc:///tmp/rugamia.ipc")
-    socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
     bot.start()
 
