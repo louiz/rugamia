@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+#
+# Author: Florent Le Coz <louiz@poezio.eu>
+#
+# This file is part of Ruĝamia.
+#
+# Ruĝamia is free software: you can redistribute it and/or modify
+# it under the terms of the zlib license. See the COPYING file.
+
+# Edit these
+FORGE = "http://redmine.poezio.eu" # preferably no trailing /
+PROJECT_NAME = "poezio"
+IPC_FILENAME = "/tmp/rugamia.ipc"
+ROOM_NAME = "test@muc.poezio.eu"
+
+import subprocess
+import zmq
+import sys
+import time
+
+COMMIT_URL = "%(forge)s/projects/%(name)s/repository/revisions/%%s/diff" % {'forge': FORGE, 'name': PROJECT_NAME}
+
+context = zmq.Context()
+socket = context.socket(zmq.PUSH)
+socket.bind("ipc://%s" % IPC_FILENAME)
+
+old, new, branch = sys.stdin.read().split()
+proc = subprocess.Popen(["git", "rev-list", "--pretty=format:%h%n%an%n%s", "%s..%s" % (old, new)], stdout=subprocess.PIPE)
+lines = [line.decode().strip() for line in proc.stdout.readlines()]
+while lines:
+    subject, author, h, _ = lines.pop(), lines.pop(), lines.pop(), lines.pop()
+    url = COMMIT_URL % h
+    message = "New revision by %s: %s\n%s" % (author, url, subject)
+    socket.send_multipart([ROOM_NAME.encode(), message.encode()])
