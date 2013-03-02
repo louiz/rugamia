@@ -24,10 +24,12 @@ import argparse
 import getpass
 import urllib
 import signal
+import stat
 import xml
 import zmq
 import sys
 import re
+import os
 
 class RedmineApi(object):
     def __init__(self, url):
@@ -191,7 +193,7 @@ def parse_arguments():
     parser.add_argument('--host', help='The custom host to connect to.')
     parser.add_argument('--port', help='The custom port to connect to.', default=5222)
     parser.add_argument('--nick', help='The nick to use in MUC rooms')
-    parser.add_argument('--socket', help='The IPC file used to receive messages')
+    parser.add_argument('--socket', help='The IPC file used to receive messages', default="/tmp/rugamia.ipc")
     parser.add_argument('rooms', nargs='+', help='The list of rooms to join')
 
     return parser.parse_args()
@@ -205,7 +207,9 @@ def main():
 
     ctx = zmq.Context()
     socket = ctx.socket(zmq.PULL)
-    socket.connect("ipc:///tmp/rugamia.ipc")
+    socket.bind("ipc://%s" % args.socket)
+    # Let any process, running under any UID write into that socket
+    os.chmod(args.socket, stat.S_IRWXU|stat.S_IRWXG|stat.S_IRWXO)
 
     bot.start()
 
