@@ -33,7 +33,7 @@ import re
 import os
 
 class RedmineApi(object):
-    def __init__(self, url, args):
+    def __init__(self, args):
         if args.api_format == 'xml':
             self.parse_issue = self.parse_issue_xml
         elif args.api_format == 'json':
@@ -42,7 +42,7 @@ class RedmineApi(object):
             print("%s is not a valid redmine api format. It should be 'xml' or 'json'" % args.api_format)
             sys.exit(-1)
         self.format = args.api_format
-        self.url = url
+        self.url = args.forge
 
     def get_bug_information(self, number):
         uri = "%s/%s" % (self.url, "issues/%s.%s" % (number, self.format))
@@ -220,13 +220,14 @@ def parse_arguments():
     parser.add_argument('--nick', help='The nick to use in MUC rooms')
     parser.add_argument('--socket', help='The IPC file used to receive messages', default="/tmp/rugamia.ipc")
     parser.add_argument('--format', dest="api_format", help='The format used by the redmine API', default="json")
+    parser.add_argument('--forge', help='The forge where API requests are made (including http://)', default="http://redmine.org")
     parser.add_argument('rooms', nargs='+', help='The list of rooms to join')
 
     return parser.parse_args()
 
 def main():
     args = parse_arguments()
-    api = RedmineApi("http://redmine.org", args)
+    api = RedmineApi(args)
 
     bot = Bot(args, api)
     signal.signal(signal.SIGINT, bot.exit)
