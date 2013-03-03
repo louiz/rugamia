@@ -73,8 +73,8 @@ class RedmineApi(object):
         issue['tracker'] = issue['tracker']['name']
         issue['author'] = issue['author']['name']
         issue['subject'] = issue['subject']
-        issue['created_on'] = datetime.datetime.strptime(issue['created_on'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y/%m/%d %H:%M:%S")
-        issue['updated_on'] = datetime.datetime.strptime(issue['updated_on'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y/%m/%d %H:%M:%S")
+        issue['created_on'] = issue['created_on']
+        issue['updated_on'] = issue['updated_on']
         issue['url'] = "%s/issues/%s" % (self.url, number)
         issue['id'] = number
         return issue
