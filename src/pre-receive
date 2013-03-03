@@ -22,7 +22,7 @@ COMMIT_URL = "%(forge)s/projects/%(name)s/repository/revisions/%%s/diff" % {'for
 
 context = zmq.Context()
 socket = context.socket(zmq.PUSH)
-socket.bind("ipc://%s" % IPC_FILENAME)
+socket.connect("ipc://%s" % IPC_FILENAME)
 
 old, new, branch = sys.stdin.read().split()
 proc = subprocess.Popen(["git", "rev-list", "--pretty=format:%h%n%an%n%s", "%s..%s" % (old, new)], stdout=subprocess.PIPE)
