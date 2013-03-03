@@ -193,8 +193,8 @@ class Bot(sleekxmpp.ClientXMPP):
                 print(bug_number)
                 try:
                     info = self.redmine_api.get_bug_information(int(bug_number))
-                except urllib.error.HTTPError:
-                    self.send_message_to_room(room, "Bug %s not found." % bug_number)
+                except urllib.error.HTTPError as e:
+                    self.send_message_to_room(room, "Bug %s not found: %s" % (bug_number, e))
                 else:
                     print(info)
                     if info:
