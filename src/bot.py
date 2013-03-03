@@ -24,6 +24,7 @@ import argparse
 import getpass
 import urllib
 import signal
+import json
 import stat
 import xml
 import zmq
@@ -32,16 +33,27 @@ import re
 import os
 
 class RedmineApi(object):
-    def __init__(self, url):
+    def __init__(self, url, args):
+        if args.api_format == 'xml':
+            self.parse_issue = self.parse_issue_xml
+        elif args.api_format == 'json':
+            self.parse_issue = self.parse_issue_json
+        else:
+            print("%s is not a valid redmine api format. It should be 'xml' or 'json'" % args.api_format)
+            sys.exit(-1)
+        self.format = args.api_format
         self.url = url
 
     def get_bug_information(self, number):
-        uri = "%s/%s" % (self.url, "issues/%s.xml" % (number))
+        uri = "%s/%s" % (self.url, "issues/%s.%s" % (number, self.format))
         response = urllib.request.urlopen(uri)
         if response.getcode() != 200:
             print("Response code: %s" % response.getcode())
             return None
         body = response.read()
+        return self.parse_issue(body, number)
+
+    def parse_issue_xml(self, body, number):
         issue = xml.etree.ElementTree.fromstring(body)
         res = {}
         res['status'] = issue.find('status').attrib.get('name')
@@ -53,6 +65,19 @@ class RedmineApi(object):
         res['id'] = number
         res['url'] = "%s/issues/%s" % (self.url, number)
         return res
+
+    def parse_issue_json(self, body, number):
+        print(body)
+        issue = json.loads(body.decode())['issue']
+        issue['status'] = issue['status']['name']
+        issue['tracker'] = issue['tracker']['name']
+        issue['author'] = issue['author']['name']
+        issue['subject'] = issue['subject']
+        issue['created_on'] = datetime.datetime.strptime(issue['created_on'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y/%m/%d %H:%M:%S")
+        issue['updated_on'] = datetime.datetime.strptime(issue['updated_on'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y/%m/%d %H:%M:%S")
+        issue['url'] = "%s/issues/%s" % (self.url, number)
+        issue['id'] = number
+        return issue
 
 
 class Bot(sleekxmpp.ClientXMPP):
@@ -194,13 +219,14 @@ def parse_arguments():
     parser.add_argument('--port', help='The custom port to connect to.', default=5222)
     parser.add_argument('--nick', help='The nick to use in MUC rooms')
     parser.add_argument('--socket', help='The IPC file used to receive messages', default="/tmp/rugamia.ipc")
+    parser.add_argument('--format', dest="api_format", help='The format used by the redmine API', default="json")
     parser.add_argument('rooms', nargs='+', help='The list of rooms to join')
 
     return parser.parse_args()
 
 def main():
-    api = RedmineApi("http://redmine.org")
     args = parse_arguments()
+    api = RedmineApi("http://redmine.org", args)
 
     bot = Bot(args, api)
     signal.signal(signal.SIGINT, bot.exit)
