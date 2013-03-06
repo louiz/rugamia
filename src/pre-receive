@@ -25,10 +25,19 @@ socket = context.socket(zmq.PUSH)
 socket.connect("ipc://%s" % IPC_FILENAME)
 
 old, new, branch = sys.stdin.read().split()
-proc = subprocess.Popen(["git", "rev-list", "--pretty=format:%h%n%an%n%s", "%s..%s" % (old, new)], stdout=subprocess.PIPE)
-lines = [line.decode().strip() for line in proc.stdout.readlines()]
-while lines:
-    subject, author, h, _ = lines.pop(), lines.pop(), lines.pop(), lines.pop()
+proc = subprocess.Popen(["git", "log", "--stat", "--oneline", "-C", "--pretty=format:%h%n%an%n%s", "%s..%s" % (old, new)], stdout=subprocess.PIPE)
+revlines = [line.decode().strip() for line in proc.stdout.readlines()]
+
+while revlines:
+    h, author, subject = revlines.pop(0), revlines.pop(0), revlines.pop(0)
     url = COMMIT_URL % h
-    message = "New revision by %s: %s\n%s" % (author, url, subject)
+    line = revlines.pop(0)
+    diff_stats = ''
+    while line:
+        diff_stats += line + '\n'
+        if revlines:
+            line = revlines.pop(0)
+        else:
+            line = ''
+    message = "New revision by %s: %s\n%s\n%s" % (author, url, subject, diff_stats)
     socket.send_multipart([ROOM_NAME.encode(), message.encode()])
