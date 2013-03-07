@@ -16,6 +16,7 @@ Using the redmine_rugamia plugin and IPC sockets, it delivers realtime
 notifications when an issue has been edited on the bug tracker.
 """
 
+import xml.sax.saxutils
 import urllib.request
 import urllib.error
 import sleekxmpp
@@ -206,6 +207,7 @@ class Bot(sleekxmpp.ClientXMPP):
         print("Left room %s" % room)
 
 def htmlize(text):
+    text = xml.sax.saxutils.escape(text)
     text = re.sub(r'\++', lambda x: ("<span style='color:green'>%s</span>" % x.group(0)), text)
     text = re.sub(r'-+', lambda x: ("<span style='color:red'>%s</span>" % x.group(0)), text)
     text = text.replace('\n', '<br/>')
