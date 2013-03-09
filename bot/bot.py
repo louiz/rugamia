@@ -19,12 +19,14 @@ notifications when an issue has been edited on the bug tracker.
 import xml.sax.saxutils
 import urllib.request
 import urllib.error
+import configparser
 import sleekxmpp
 import datetime
 import argparse
 import getpass
 import urllib
 import signal
+import shlex
 import json
 import stat
 import xml
@@ -33,17 +35,42 @@ import sys
 import re
 import os
 
-class RedmineApi(object):
+class Configuration(object):
     def __init__(self, args):
+        self.filename = args.config
+        config = configparser.ConfigParser()
+        config.read(self.filename)
+        if 'keys' not in config:
+            config.add_section('keys')
+        if 'rooms' not in config:
+            config.add_section('rooms')
+        self.config = config
+
+    def get_jid_key(self, jid):
+        return self.config['keys'].get(jid, None)
+
+    def set_jid_key(self, jid, key):
+        self.config['keys'][jid] = key
+        with open(self.filename, 'w') as configfile:
+            self.config.write(configfile)
+
+    def get_project_id(self, room):
+        return int(self.config['rooms'][room])
+
+class RedmineApi(object):
+    def __init__(self, args, config):
         if args.api_format == 'xml':
             self.parse_issue = self.parse_issue_xml
+            self.create_issue_data = self.create_issue_data_xml
         elif args.api_format == 'json':
             self.parse_issue = self.parse_issue_json
+            self.create_issue_data = self.create_issue_data_json
         else:
             print("%s is not a valid redmine api format. It should be 'xml' or 'json'" % args.api_format)
             sys.exit(-1)
         self.format = args.api_format
         self.url = args.forge
+        self.config = config
 
     def get_bug_information(self, number):
         uri = "%s/%s" % (self.url, "issues/%s.%s" % (number, self.format))
@@ -68,7 +95,6 @@ class RedmineApi(object):
         return res
 
     def parse_issue_json(self, body, number):
-        print(body)
         issue = json.loads(body.decode())['issue']
         issue['status'] = issue['status']['name']
         issue['tracker'] = issue['tracker']['name']
@@ -80,10 +106,29 @@ class RedmineApi(object):
         issue['id'] = number
         return issue
 
+    def create_issue(self, jid, room, title, body):
+        uri = "%s/%s" % (self.url, "issues.%s" % (self.format))
+        print(uri)
+        key = self.config.get_jid_key(jid)
+        if not key:
+            return "No. Your jid is not associated with any login of the forge"
+        request = urllib.request.Request(url=uri, data=self.create_issue_data(room, title, body),
+                                         headers={'X-Redmine-API-Key': key,
+                                                  'Content-type': 'application/%s'% (self.format)})
+        print(request)
+        response = urllib.request.urlopen(request)
+        nb = json.loads(response.read().decode())['issue']['id']
+        return "Bug created: %s/issues/%s" % (self.url, nb)
+
+    def create_issue_data_json(self, room, title, body):
+        data = json.dumps({'issue': { 'project_id': self.config.get_project_id(room), 'subject': title, 'description': body}}).encode()
+        print(data)
+        return data
 
 class Bot(sleekxmpp.ClientXMPP):
-    def __init__(self, args, api):
+    def __init__(self, args, api, config):
         self.redmine_api = api
+        self.config = config
         print(self.redmine_api)
         jid, password, self.host, self.port = args.jid, getpass.getpass(), args.host, args.port
         sleekxmpp.ClientXMPP.__init__(self, jid, password)
@@ -94,6 +139,7 @@ class Bot(sleekxmpp.ClientXMPP):
         # {room_names: [message, message]}
         self.messages_to_send_on_join = {}
         self.affiliations = {}
+        self.jids = {}
 
         print("Connecting to %s" % (jid))
 
@@ -103,6 +149,7 @@ class Bot(sleekxmpp.ClientXMPP):
         self.add_event_handler("session_start", self.on_session_start)
         self.add_event_handler("groupchat_presence", self.on_groupchat_presence)
         self.add_event_handler("groupchat_message", self.on_groupchat_message)
+        self.add_event_handler("message", self.on_message)
 
     def join_rooms(self):
         for room in self.rooms.keys():
@@ -120,6 +167,14 @@ class Bot(sleekxmpp.ClientXMPP):
 
     def exit(self, sig, frame):
         self.disconnect()
+
+    def send_message_to_jid(self, jid, message):
+        message = message.strip()
+        print("Actually sending [%s] to %s" % (message, jid))
+        stanza = self.make_message(jid)
+        stanza['type'] = 'chat'
+        stanza['body'] = message
+        stanza.send()
 
     def send_message_to_room(self, room, message):
         message = message.strip()
@@ -159,17 +214,35 @@ class Bot(sleekxmpp.ClientXMPP):
         print("The full JID is %s" % self.boundjid.full)
         self.join_rooms()
 
+    def on_message(self, message):
+        if message['type'] != 'chat':
+            return
+        if message['from'].bare in self.rooms:
+            nick = message['from'].resource
+            jid = self.jids.get(message['from'].bare, {}).get(nick, None)
+        else:
+            jid = message['from'].bare
+        print(jid)
+        key = message['body']
+        self.config.set_jid_key(jid, key)
+        self.send_message_to_jid(message['from'], "The key associated with the jid %s is now [%s]" % (jid, key))
+
     def on_groupchat_presence(self, presence):
         print(presence)
-
         room = presence['from'].bare
         affiliation = presence['muc']['affiliation']
         nick = presence['from'].resource
+        jid = presence['muc']['jid'].bare
         if affiliation:
             if not room in self.affiliations:
                 self.affiliations[room] = {}
             self.affiliations[room][nick] = affiliation
+        if jid:
+            if not room in self.jids:
+                self.jids[room] = {}
+            self.jids[room][nick] = jid
         print(self.affiliations)
+        print(self.jids)
         if nick == self.nick:
             if presence['type'] == 'unavailable':
                 self.on_groupchat_leave(room)
@@ -183,12 +256,33 @@ class Bot(sleekxmpp.ClientXMPP):
                     for message in delayed_messages:
                         self.send_message_to_room(room, message)
 
+    def get_affilation(self, room, nick):
+        return self.affiliations.get(room, {}).get(nick, None)
+
     def on_groupchat_message(self, message):
-        if message['from'].resource == self.nick:
-            return
+        print(message)
         room = message['from'].bare
+        nick = message['from'].resource
+        if nick == self.nick:
+            return
         if message['body'].startswith('!add '):
-            pass
+            jid = self.jids.get(room, {}).get(nick, None)
+            if not jid:
+                self.send_message_to_room(room, 'No: I cannot see your real JID.')
+            affiliation = self.get_affilation(room, nick)
+            if not affiliation or affiliation.lower() not in ['owner', 'admin', 'member']:
+                self.send_message_to_room(room, 'No: permission denied.')
+                return
+            try:
+                args = shlex.split(message['body'][len('!add '):])
+            except ValueError as e:
+                self.send_message_to_room(room, "No: %s" % e)
+                return
+            if len(args) != 2:
+                self.send_message_to_room(room, "No: I need two arguments: The title and the description.")
+                return
+            message = self.redmine_api.create_issue(jid, room, args[0], args[1])
+            self.send_message_to_room(room, message)
         else:
             for bug_number in re.findall('#(\d+)', message['body'])[:4]:
                 print(bug_number)
@@ -201,7 +295,6 @@ class Bot(sleekxmpp.ClientXMPP):
                     if info:
                         response = "Bug %(url)s – %(subject)s\n%(status)s – %(author)s – Created on: %(created_on)s" % info
                         self.send_message_to_room(room, response)
-        print(message['body'])
 
     def on_groupchat_leave(self, room):
         print("Left room %s" % room)
@@ -223,15 +316,18 @@ def parse_arguments():
     parser.add_argument('--socket', help='The IPC file used to receive messages', default="/tmp/rugamia.ipc")
     parser.add_argument('--format', dest="api_format", help='The format used by the redmine API', default="json")
     parser.add_argument('--forge', help='The forge where API requests are made (including http://)', default="http://redmine.org")
+    parser.add_argument('--config', help='The path of the configuration file (API keys and project ids are kept in it)', default="./rugamia.cfg")
+#    parser.add_argument('--key', help='The API key used to log on the forge (the account must be an admin to be able to impersonate other users)')
     parser.add_argument('rooms', nargs='+', help='The list of rooms to join')
 
     return parser.parse_args()
 
 def main():
     args = parse_arguments()
-    api = RedmineApi(args)
+    config = Configuration(args)
+    api = RedmineApi(args, config)
 
-    bot = Bot(args, api)
+    bot = Bot(args, api, config)
     signal.signal(signal.SIGINT, bot.exit)
 
     ctx = zmq.Context()
