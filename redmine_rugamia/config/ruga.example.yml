@@ -1,0 +1,7 @@
+production:
+  socket: /tmp/ruga.ipc
+  muc_server: muc.poezio.eu
+
+development:
+  socket: /tmp/ruga.ipc
+  muc_server: muc.poezio.eu
