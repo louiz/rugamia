@@ -248,8 +248,7 @@ class Bot(sleekxmpp.ClientXMPP):
                 self.on_groupchat_leave(room)
             if presence['type'] == 'available':
                 print('Room %s joined.' % room)
-                if room in self.rooms:
-                    self.rooms[room] = True
+                self.rooms[room] = True
                 if room in self.messages_to_send_on_join:
                     delayed_messages = self.messages_to_send_on_join[room]
                     del self.messages_to_send_on_join[room]
