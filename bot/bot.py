@@ -296,7 +296,13 @@ class Bot(sleekxmpp.ClientXMPP):
                         self.send_message_to_room(room, response)
 
     def on_groupchat_leave(self, room):
+        """
+        Just keep track of the fact that we are not in the room anymore, so
+        that we know that we need to rejoin it if we want to send a message
+        in it, later.
+        """
         print("Left room %s" % room)
+        self.rooms[room] = False
 
 def htmlize(text):
     text = xml.sax.saxutils.escape(text)
