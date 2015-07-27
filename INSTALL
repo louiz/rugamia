@@ -17,10 +17,10 @@ $ cp hooks/pre-receive /home/git/repositories/something.git/hooks
 - PROJECT_NAME: the name of the project (as specified in redmine) associated
   with this git repository.
 
-- IPC_FILENAME: a filename used for communication through IPC. Specify any
-  file in a repository accessible by the git user, redmine and the
-  bot. /tmp/ is a good value if you trust all users having access to your
-  machine.
+- SOCKET_FILENAME: a filename used for communication through a local
+  socket. Specify any file in a repository accessible by the git user,
+  redmine and the bot. /tmp/ is a good value if you trust all users having
+  access to your machine.
 
 - ROOM_NAME: The JID of the MUC where the bot should announce the new commits.
 
@@ -49,7 +49,7 @@ python3 bot/bot.py bot@example.com project1@muc.example.com project2@muc.example
   (Something like /usr/share/redmine/plugins/)
 
 * Copy config/ruga.example.yml to config/ruga.yml and configure it:
-  - socket is the filename of the IPC socket used to communicate with the
+  - socket is the filename of the UNIX socket used to communicate with the
     bot
   - muc_server is the hostname of the MUC server runing the rooms of the
     redmine projects
