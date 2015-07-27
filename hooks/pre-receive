@@ -32,12 +32,10 @@ while revlines:
     h, author, subject = revlines.pop(0), revlines.pop(0), revlines.pop(0)
     url = COMMIT_URL % h
     line = revlines.pop(0)
-    diff_stats = ''
     while line:
-        diff_stats += line + '\n'
         if revlines:
             line = revlines.pop(0)
         else:
             line = ''
-    message = "New revision by %s: %s\n%s\n%s" % (author, url, subject, diff_stats)
+    message = "New revision by %s: %s\n%s" % (author, url, subject)
     socket.send_multipart([ROOM_NAME.encode(), message.encode()])
