@@ -12,7 +12,7 @@ A simple XMPP bot joining one or more MUC rooms. It can automatically
 respond to user requests and provide various informations from a redmine
 service.
 
-Using the redmine_rugamia plugin and IPC sockets, it delivers realtime
+Using the redmine_rugamia plugin and UNIX sockets, it delivers realtime
 notifications when an issue has been edited on the bug tracker.
 """
 
@@ -20,20 +20,25 @@ import xml.sax.saxutils
 import urllib.request
 import urllib.error
 import configparser
-import sleekxmpp
+import functools
 import datetime
 import argparse
+import slixmpp
 import getpass
-import urllib
 import signal
+import socket
+import urllib
 import shlex
 import json
 import stat
 import xml
-import zmq
 import sys
 import re
 import os
+
+import logging
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(levelname)-8s %(message)s')
 
 class Configuration(object):
     def __init__(self, args):
@@ -125,13 +130,13 @@ class RedmineApi(object):
         print(data)
         return data
 
-class Bot(sleekxmpp.ClientXMPP):
+class Bot(slixmpp.ClientXMPP):
     def __init__(self, args, api, config):
         self.redmine_api = api
         self.config = config
         print(self.redmine_api)
         jid, password, self.host, self.port = args.jid, getpass.getpass(), args.host, args.port
-        sleekxmpp.ClientXMPP.__init__(self, jid, password)
+        slixmpp.ClientXMPP.__init__(self, jid, password)
         self.register_plugin('xep_0045')
         self.nick = args.nick or self.boundjid.node
         # List of room names, associated with a bool telling if the room is joined or not {roomname: bool}
@@ -163,7 +168,6 @@ class Bot(sleekxmpp.ClientXMPP):
 
     def start(self):
         self.connect((self.host or self.boundjid.host, self.port))
-        self.process(block=False)
 
     def exit(self, sig, frame):
         self.disconnect()
@@ -318,7 +322,7 @@ def parse_arguments():
     parser.add_argument('--host', help='The custom host to connect to.')
     parser.add_argument('--port', help='The custom port to connect to.', default=5222)
     parser.add_argument('--nick', help='The nick to use in MUC rooms')
-    parser.add_argument('--socket', help='The IPC file used to receive messages', default="/tmp/rugamia.ipc")
+    parser.add_argument('--socket', help='The path of the UNIX socket used to receive messages', default="/tmp/rugamia.socket")
     parser.add_argument('--format', dest="api_format", help='The format used by the redmine API', default="json")
     parser.add_argument('--forge', help='The forge where API requests are made (including http://)', default="http://redmine.org")
     parser.add_argument('--config', help='The path of the configuration file (API keys and project ids are kept in it)', default="./rugamia.cfg")
@@ -327,32 +331,71 @@ def parse_arguments():
 
     return parser.parse_args()
 
+class RemoteUnixClient(object):
+    """
+    Represent the other end of a UNIX socket, we read data until EOF, and
+    then we “parse” it to send the message into the correct room, using bot
+    instance
+    """
+    def __init__(self, loop, fd, bot):
+        self.bot = bot
+        self.fd = fd
+        self.data = b""
+        self.loop = loop
+
+    def on_eof(self):
+        l = self.data.split(b"\n", 1)
+        if len(l) != 2:
+            print("Received message is malformed: %s" % (l))
+        else:
+            room, msg = l
+            self.bot.send_message_to_room(room.decode(), msg.decode())
+        self.loop.remove_reader(self.fd)
+
+    def on_readable(self):
+        data = self.fd.recv(2048)
+        if not data:
+            self.on_eof()
+        else:
+            self.data += data
+
+def on_unix_acceptable(loop, fd, bot):
+    c, addr = fd.accept()
+    unix_client = RemoteUnixClient(loop, c, bot)
+    loop.add_reader(c, functools.partial(unix_client.on_readable))
+
+def on_exit(loop):
+    print("Exiting…")
+    loop.stop()
+
 def main():
+    # Parse command line arguments
     args = parse_arguments()
     config = Configuration(args)
     api = RedmineApi(args, config)
 
+    # Create the XMPP bot (not yet connected or anything)
     bot = Bot(args, api, config)
-    signal.signal(signal.SIGINT, bot.exit)
+    bot.start()
+    loop = bot.loop
 
-    ctx = zmq.Context()
-    socket = ctx.socket(zmq.PULL)
-    socket.bind("ipc://%s" % args.socket)
+    # Create a listening UNIX socket on the given address
+    unix_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    print("Binding unix socket on %s" % (args.socket))
+    try: # Remove the socket from a previous run that didn’t exit cleanly
+        os.unlink("%s" % (args.socket))
+    except FileNotFoundError:
+        pass
+    unix_socket.bind("%s" % (args.socket))
+    unix_socket.listen(42)
     # Let any process, running under any UID write into that socket
     os.chmod(args.socket, stat.S_IRWXU|stat.S_IRWXG|stat.S_IRWXO)
+    loop.add_reader(unix_socket, functools.partial(on_unix_acceptable, loop, unix_socket, bot))
 
-    bot.start()
+    # Catch the SIGINT signal to exit cleanly
+    loop.add_signal_handler(signal.SIGINT, functools.partial(on_exit, loop))
 
-    while True:
-        try:
-            res = socket.recv_multipart()
-        except KeyboardInterrupt:
-            return
-        else:
-            if len(res) != 2:
-                print("Wrong message received on IPC socket")
-            else:
-                bot.send_message_to_room(res[0].decode(), res[1].decode())
+    bot.process()
 
 if __name__ == '__main__':
     main()
