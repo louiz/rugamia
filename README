@@ -23,20 +23,20 @@ It features:
 It is composed of three distincts parts:
 
  - A redmine plugin (in ruby) that sends notification messages about the bug
-   tracker and wiki changes into an IPC socket
+   tracker and wiki changes into an UNIX socket
 
  - A git hook (in python) that sends notification messages about recent
-   commits into an IPC socket
+   commits into an UNIX socket
 
- - An XMPP bot (in python) that reads messages into an IPC socket and forward
+ - An XMPP bot (in python) that reads messages into an UNIX socket and forward
    them into the appropriate chatrooms. It also receives chatroom messages,
    queries the redmine API and sends back a response
 
 =======================
     Contact/support
 =======================
-Jabber ChatRoom:   ruĝamia@muc.poezio.eu
-Report a bug:      http://dev.louiz.org/projects/rugamia/issues/new
+Jabber ChatRoom:   ruĝamia@muc.poez.io
+Report a bug:      https://dev.louiz.org/projects/rugamia/issues/new
 
 =======================
 	License
