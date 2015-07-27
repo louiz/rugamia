@@ -10,19 +10,22 @@
 # Edit these
 FORGE = "http://redmine.poezio.eu" # preferably no trailing /
 PROJECT_NAME = "poezio"
-IPC_FILENAME = "/tmp/rugamia.ipc"
+SOCKET_FILENAME = "/tmp/rugamia.socket"
 ROOM_NAME = "test@muc.poezio.eu"
 
 import subprocess
-import zmq
-import sys
+import socket
 import time
+import sys
 
 COMMIT_URL = "%(forge)s/projects/%(name)s/repository/revisions/%%s/diff" % {'forge': FORGE, 'name': PROJECT_NAME}
 
-context = zmq.Context()
-socket = context.socket(zmq.PUSH)
-socket.connect("ipc://%s" % IPC_FILENAME)
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+try:
+    socket.connect("%s" % SOCKET_FILENAME)
+except Exception:
+    print("Error: Can’t send message to the bot using socket %s, make sure it is started." % (SOCKET_FILENAME))
+    sys.exit(1)
 
 old, new, branch = sys.stdin.read().split()
 proc = subprocess.Popen(["git", "log", "--stat", "--oneline", "-C", "--pretty=format:%h%n%an%n%s", "%s..%s" % (old, new)], stdout=subprocess.PIPE)
@@ -38,4 +41,6 @@ while revlines:
         else:
             line = ''
     message = "New revision by %s: %s\n%s" % (author, url, subject)
-    socket.send_multipart([ROOM_NAME.encode(), message.encode()])
+    socket.send(("%s\n%s" % (ROOM_NAME, message)).encode())
+
+socket.close()

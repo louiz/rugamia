@@ -1,25 +1,20 @@
-require 'zmq'
-
 class Ruga
-  @@socket_path   = nil
-  @@muc_server      = nil
+  @@socket_path = nil
+  @@muc_server  = nil
 
-  @@context = nil
-  @@socket = nil
-  @@connected = false
   def self.speak(project_name, message)
     return if message.nil? || message.empty?
 
     load_options unless @@socket_path && @@muc_server
-    if !@@connected
-      @@context = ZMQ::Context.new(1)
-      @@socket = @@context.socket(ZMQ::PUSH)
-      @@socket.connect("ipc://" + @@socket_path)
-      @@connected = true
+
+    begin
+      socket = UNIXSocket.new(@@socket_path)
+      socket.send(project_name + "@" + @@muc_server + "\n" + message, 0)
+      socket.close()
+    rescue
+      puts "Error: sending the message to the bot failed. Make sure it is started."
     end
 
-    @@socket.send(project_name + "@" + @@muc_server, ZMQ::SNDMORE)
-    @@socket.send(message)
   end
 
   private
